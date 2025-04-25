@@ -1,0 +1,150 @@
+cat R3conX3 
+#!/bin/bash
+
+# === Colores ===
+RED="\e[31m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+BLUE="\e[34m"
+MAGENTA="\e[35m"
+CYAN="\e[36m"
+WHITE="\e[97m"
+RESET="\e[0m"
+
+echo -e "
+${MAGENTA}
+ _______  ______   _______  _______  _                
+(  ____ )/ ___  \ (  ____ \(  ___  )( (    /||\     /|
+| (    )|\/   \  \| (    \/| (   ) ||  \  ( |( \   / )
+| (____)|   ___) /| |      | |   | ||   \ | | \ (_) / 
+|     __)  (___ ( | |      | |   | || (\ \) |  ) _ (  
+| (\ (         ) \| |      | |   | || | \   | / ( ) \ 
+| ) \ \__/\___/  /| (____/\| (___) || )  \  |( /   \ )
+|/   \__/\______/ (_______/(_______)|/    )_)|/     \|
+                        author:4NTR4xX
+${RESET}
+"
+
+if [ -z "$1" ]; then
+    echo -e "${RED}❌ No se proporcionó un dominio. Usa el formato: ./R3conX dominio.com${RESET}"
+    exit 1
+fi
+
+domain="$1"
+
+
+echo -e "${CYAN}=========================================================="
+echo -e "                        🌐 Whatweb Scan                   "
+echo -e "==========================================================${RESET}"
+
+whatweb_output=$(whatweb -a 3 "$domain" 2>/dev/null)
+
+echo "$whatweb_output" | while IFS= read -r line; do
+    url=$(echo "$line" | awk '{print $1}')
+    status=$(echo "$line" | grep -o "\[[0-9]* .*]") 
+    ip=$(echo "$line" | grep -o "IP\[[^]]*\]" | sed 's/IP\[//;s/]//')
+    country=$(echo "$line" | grep -o "Country\[[^]]*\]" | sed 's/Country\[//;s/]//')
+    server=$(echo "$line" | grep -o "HTTPServer\[[^]]*\]" | sed 's/HTTPServer\[//;s/]//')
+    cms=$(echo "$line" | grep -o "WordPress\[[^]]*\]" | sed 's/WordPress\[//;s/]//')
+    title=$(echo "$line" | grep -o "Title\[[^]]*\]" | sed 's/Title\[//;s/]//')
+    email=$(echo "$line" | grep -o "Email\[[^]]*\]" | sed 's/Email\[//;s/]//')
+
+    echo -e "${BLUE}🔗 $url${RESET}"
+    [ -n "$status" ] && echo -e "   ├─ 🔁 ${WHITE}$status${RESET}"
+    [ -n "$ip" ] && echo -e "   ├─ 🌐 IP: ${WHITE}$ip${RESET}"
+    [ -n "$server" ] && echo -e "   ├─ 📦 Server: ${WHITE}$server${RESET}"
+    [ -n "$country" ] && echo -e "   ├─ 🌍 Country: ${WHITE}$country${RESET}"
+    [ -n "$email" ] && echo -e "   ├─ 📧 Email: ${WHITE}$email${RESET}"
+    [ -n "$cms" ] && echo -e "   ├─ 🧱 CMS: ${WHITE}$cms${RESET}"
+    [ -n "$title" ] && echo -e "   └─ 📖 Title: ${WHITE}$title${RESET}"
+    echo ""
+done
+
+
+echo -e "${CYAN}=========================================================="
+echo -e "                   🚦 Load Balancer Detection             "
+echo -e "==========================================================${RESET}"
+
+lbd_salida=$(lbd "$domain" 2>/dev/null)
+
+
+if echo "$lbd_salida" | grep -q "Checking for DNS-Loadbalancing: FOUND"; then
+    echo "✅ DNS Load Balancing detectado"
+    echo "$lbd_salida" | grep "$domain has address"
+else
+    echo "❌ No se detectó DNS Load Balancing"
+fi
+
+if echo "$lbd_salida" | grep -A1 "Checking for HTTP-Loadbalancing \[Server\]" | grep -q "FOUND"; then
+    echo "✅ HTTP Load Balancing [Server] detectado"
+else
+    echo "❌ No se detectó HTTP Load Balancing [Server]"
+fi
+
+if echo "$lbd_salida" | grep -A1 "Checking for HTTP-Loadbalancing \[Date\]" | grep -q "FOUND"; then
+    echo "✅ HTTP Load Balancing [Date] detectado"
+else
+    echo "❌ No se detectó HTTP Load Balancing [Date]"
+fi
+
+echo -e "${CYAN}=========================================================="
+echo -e "                           🔐 WAF                         "
+echo -e "==========================================================${RESET}"
+
+salida=$(wafw00f "$domain" 2>&1)
+linea_waf=$(echo "$salida" | grep -i "is behind")
+waf=$(echo "$linea_waf" | sed -E 's/.*is behind (.*) WAF.*/\1/' | xargs)
+
+if [ -n "$waf" ]; then
+    echo -e "${YELLOW}🔐 WAF detectado: ${WHITE}$waf${RESET}"
+else
+    echo -e "${GREEN}✅ No se detectó WAF${RESET}"
+fi
+
+
+echo -e "${CYAN}=========================================================="
+echo -e "                         🔒 SSL/TLS                       "
+echo -e "==========================================================${RESET}"
+
+sslyze "$domain" 2>/dev/null | awk '
+BEGIN { cert_section=0; tls12=0; tls13=0; }
+/Certificate Chain #1 \(RSAPublicKey\)/ { cert_section=1 }
+/SHA1 Fingerprint:/ && cert_section { print "🔐 SHA1 Fingerprint: " $NF }
+/Common Name:/ && cert_section { print "🌐 Common Name: " $NF }
+/Issuer:/ && cert_section { print "🏢 Issuer: " substr($0, index($0,$2)) }
+/Not Before:/ && cert_section { print "📅 Válido desde: " $NF }
+/Not After:/ && cert_section { print "📅 Válido hasta: " $NF }
+/SubjAltName - DNS Names:/ && cert_section { gsub(/\[|\]|,|'\''/, "", $0); print "📌 DNS Alternativos: " substr($0, index($0,$5)) }
+/Certificate Transparency:/ && cert_section { print "🧾 Certificate Transparency: " substr($0, index($0,$1)) }
+/TLS 1\.2 Cipher Suites:/ { tls12=1 }
+/TLS 1\.3 Cipher Suites:/ { tls13=1; tls12=0 }
+/The server accepted the following/ && (tls12 || tls13) { show=1; next }
+/^\s*$/ { show=0 }
+show && tls12 { print "🔐 TLS 1.2: " $1 }
+/show && tls13/ { print "🔐 TLS 1.3: " $1 }
+'
+
+echo -e "${CYAN}=========================================================="
+echo -e "                         🌐 Subdominios                   "
+echo -e "==========================================================${RESET}"
+
+subdominios=$(sublist3r -d "$domain" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep -oE "([a-zA-Z0-9_-]+\.)+$domain" | sort -u)
+
+if [ -n "$subdominios" ]; then
+    echo -e "${WHITE}🌐 Subdominios encontrados:${RESET}"
+    echo -e "${GREEN}$subdominios${RESET}"
+else
+    echo -e "${RED}❌ No se encontraron subdominios.${RESET}"
+fi
+
+echo -e "${CYAN}=========================================================="
+echo -e "                   📧 Correos Electrónicos                "
+echo -e "==========================================================${RESET}"
+
+theHarvester -d "$domain" -b intelx,yahoo,bing,brave,hunter,github-code 2>/dev/null | \
+grep -Eoi "[a-zA-Z0-9._%+-]+@$domain" | sort -u
+
+# Si no encontró nada, muestra mensaje
+if [ $? -ne 0 ]; then
+    echo "❌ No se encontraron correos electrónicos."
+fi
