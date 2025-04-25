@@ -63,6 +63,7 @@ sudo apt install whatweb lbd wafw00f sslyze sublist3r theHarvester
 
 ```bash
 git clone https://github.com/4NTR4xX01/R3conX.git
+cd R3conX
 chmod +x R3conx
 sudo mv R3conx /usr/local/bin/
 
