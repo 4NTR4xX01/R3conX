@@ -56,7 +56,7 @@ Puedes instalar estas herramientas en un sistema basado en Debian/Ubuntu con los
 
 ```bash
 sudo apt update
-sudo apt install whatweb lbd wafw00f sslyze sublist3r theHarvester
+sudo apt install whatweb lbd wafw00f sslyze sublist3r theharvester bind9-dnsutils wordlists
 ```
 
 ## Instalación

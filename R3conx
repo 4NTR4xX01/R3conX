@@ -25,12 +25,87 @@ ${RESET}
 "
 
 if [ -z "$1" ]; then
-    echo -e "${RED}❌ No se proporcionó un dominio. Usa el formato: ./R3conX dominio.com${RESET}"
+    echo -e "${RED}❌ No se proporcionó un dominio. Usa el formato: ${GREEN}R3conX dominio.com${RESET}"
     exit 1
 fi
 
 domain="$1"
 
+echo -e "${CYAN}=========================================================="
+echo -e "                        📇 WHOIS Info                    "
+echo -e "==========================================================${RESET}"
+
+whois_data=$(whois "$domain" 2>/dev/null)
+
+registrar=$(echo "$whois_data" | grep -iE "^Registrar:|^Registrar Name:" | head -1 | cut -d: -f2- | xargs)
+
+creation_date=$(echo "$whois_data" | grep -iE "Created On:|Creation Date:" | head -1 | cut -d: -f2- | xargs)
+expiration_date=$(echo "$whois_data" | grep -iE "Expiration Date:|Expiry Date:" | head -1 | cut -d: -f2- | xargs)
+
+admin_block=$(echo "$whois_data" | awk '/Administrative Contact:/,/(Technical Contact:|Billing Contact:|Name Servers:)/')
+admin_name=$(echo "$admin_block" | grep -i "Name:" | head -1 | cut -d: -f2- | xargs)
+admin_city=$(echo "$admin_block" | grep -i "City:" | head -1 | cut -d: -f2- | xargs)
+admin_state=$(echo "$admin_block" | grep -i "State:" | head -1 | cut -d: -f2- | xargs)
+admin_country=$(echo "$admin_block" | grep -i "Country:" | head -1 | cut -d: -f2- | xargs)
+
+tech_block=$(echo "$whois_data" | awk '/Technical Contact:/,/(Billing Contact:|Name Servers:)/')
+tech_name=$(echo "$tech_block" | grep -i "Name:" | head -1 | cut -d: -f2- | xargs)
+tech_city=$(echo "$tech_block" | grep -i "City:" | head -1 | cut -d: -f2- | xargs)
+tech_state=$(echo "$tech_block" | grep -i "State:" | head -1 | cut -d: -f2- | xargs)
+tech_country=$(echo "$tech_block" | grep -i "Country:" | head -1 | cut -d: -f2- | xargs)
+
+[ -n "$registrar" ] && echo -e "🏢 Registrador: ${WHITE}$registrar${RESET}"
+[ -n "$creation_date" ] && echo -e "📅 Fecha de creación: ${WHITE}$creation_date${RESET}"
+[ -n "$expiration_date" ] && echo -e "📅 Expira el: ${WHITE}$expiration_date${RESET}"
+
+
+if [ -n "$admin_name" ]; then
+    echo -e "👤 Contacto administrativo:"
+    echo -e "   └─ Nombre:  ${WHITE}$admin_name${RESET}"
+    echo -e "   └─ Ciudad:  ${WHITE}$admin_city${RESET}"
+    echo -e "   └─ Estado:  ${WHITE}$admin_state${RESET}"
+    echo -e "   └─ País:    ${WHITE}$admin_country${RESET}"
+fi
+
+if [ -n "$tech_name" ]; then
+    echo -e "🛠️ Contacto técnico:"
+    echo -e "   └─ Nombre:  ${WHITE}$tech_name${RESET}"
+    echo -e "   └─ Ciudad:  ${WHITE}$tech_city${RESET}"
+    echo -e "   └─ Estado:  ${WHITE}$tech_state${RESET}"
+    echo -e "   └─ País:    ${WHITE}$tech_country${RESET}"
+fi
+
+# DNS
+dns_lines=$(echo "$whois_data" | grep -E '^\s*DNS:' | sed -E 's/^\s*DNS:\s*//')
+
+if [ -n "$dns_lines" ]; then
+    echo -e "📡 Servidores DNS:"
+    echo "$dns_lines" | while read -r line; do
+        echo -e "   └─ ${WHITE}$line${RESET}"
+    done
+else
+    echo "❌ No se encontraron servidores DNS"
+fi
+echo ""
+
+echo -e "${CYAN}=========================================================="
+echo -e "                     📥  Registros DNS                    "
+echo -e "==========================================================${RESET}"
+
+dig_response=$(dig "$domain" A +noall +answer)
+
+
+if [ -n "$dig_response" ]; then
+    echo -e "📥 Registros A obtenidos con dig:"
+    echo "$dig_response" | while read -r line; do
+        echo -e "   └─ ${WHITE}$line${RESET}"
+    done
+else
+    echo "❌ No se encontraron registros A con dig"
+fi
+
+
+echo ""
 
 echo -e "${CYAN}=========================================================="
 echo -e "                        🌐 Whatweb Scan                   "
@@ -59,6 +134,7 @@ echo "$whatweb_output" | while IFS= read -r line; do
     echo ""
 done
 
+echo ""
 
 echo -e "${CYAN}=========================================================="
 echo -e "                   🚦 Load Balancer Detection             "
@@ -86,6 +162,8 @@ else
     echo "❌ No se detectó HTTP Load Balancing [Date]"
 fi
 
+echo ""
+
 echo -e "${CYAN}=========================================================="
 echo -e "                           🔐 WAF                         "
 echo -e "==========================================================${RESET}"
@@ -100,6 +178,7 @@ else
     echo -e "${GREEN}✅ No se detectó WAF${RESET}"
 fi
 
+echo ""
 
 echo -e "${CYAN}=========================================================="
 echo -e "                         🔒 SSL/TLS                       "
@@ -123,6 +202,8 @@ show && tls12 { print "🔐 TLS 1.2: " $1 }
 /show && tls13/ { print "🔐 TLS 1.3: " $1 }
 '
 
+echo ""
+
 echo -e "${CYAN}=========================================================="
 echo -e "                         🌐 Subdominios                   "
 echo -e "==========================================================${RESET}"
@@ -135,6 +216,40 @@ if [ -n "$subdominios" ]; then
 else
     echo -e "${RED}❌ No se encontraron subdominios.${RESET}"
 fi
+
+echo ""
+
+echo -e "${CYAN}=========================================================="
+echo -e "                  📁 Enumeración de Directorios           "
+echo -e "==========================================================${RESET}"
+
+read -p "¿Deseas buscar directorios en los subdominios encontrados? (s/n): " buscar_dirs
+echo ""
+
+if [[ "$buscar_dirs" == "s" || "$buscar_dirs" == "S" ]]; then
+    wordlist="/usr/share/wordlists/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"  
+    echo ""
+    
+    for sub in $subdominios; do
+        echo -e "${MAGENTA}🔎 Escaneando $sub ...${RESET}"
+        echo ""
+        echo -e "${RED}⌛ Esto puede tardar un poco, por favor espera...${RESET}"
+        
+        if curl -s --head --max-time 5 "https://$sub" | grep -q "200\|301\|302"; then
+            gobuster dir -u "https://$sub" -w "$wordlist" --no-error -q -t 20 2>/dev/null | while read -r line; do
+                echo -e "   └─ 📁 ${WHITE}$line${RESET}"
+            done
+        else
+            echo -e "   ⚠️  ${RED}No se pudo conectar a $sub${RESET}"
+        fi
+
+        echo ""
+    done
+else
+    echo -e "${YELLOW}📁 Búsqueda de directorios omitida por el usuario.${RESET}"
+fi
+
+echo ""
 
 echo -e "${CYAN}=========================================================="
 echo -e "                   📧 Correos Electrónicos                "
